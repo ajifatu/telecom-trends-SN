@@ -1,0 +1,72 @@
+version: "3.8"
+
+services:
+  # Service Zookeeper pour la gestion de Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    ports:
+      - "2181:2181"
+    networks:
+      - app-network
+
+  # Service Kafka pour le streaming de données
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - app-network
+
+  # Service de scraper Facebook
+  facebook-scraper:
+    build:
+      context: ./scraper
+    container_name: facebook-scraper
+    depends_on:
+      - kafka
+    volumes:
+      - ./scraper:/app
+      - ./config:/app/config
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - FACEBOOK_ACCESS_TOKEN=${FACEBOOK_ACCESS_TOKEN}
+    networks:
+      - app-network
+
+  # Service de traitement des données
+  data-processor:
+    build:
+      context: ./processor
+    container_name: data-processor
+    depends_on:
+      - kafka
+    volumes:
+      - ./processor:/app
+      - ./config:/app/config
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - SNOWFLAKE_ACCOUNT=${SNOWFLAKE_ACCOUNT}
+      - SNOWFLAKE_USER=${SNOWFLAKE_USER}
+      - SNOWFLAKE_PASSWORD=${SNOWFLAKE_PASSWORD}
+      - SNOWFLAKE_DATABASE=${SNOWFLAKE_DATABASE}
+      - SNOWFLAKE_SCHEMA=${SNOWFLAKE_SCHEMA}
+      - SNOWFLAKE_WAREHOUSE=${SNOWFLAKE_WAREHOUSE}
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
